@@ -132,21 +132,50 @@ def jwt_structure(value: str) -> bool:
 
 
 def valid_date(value: str) -> bool:
-    """Check that a date string represents a real calendar date."""
-    digits = _digits(value)
-    if len(digits) == 8:
-        # Try MMDDYYYY and YYYYMMDD
-        for m_s, d_s, y_s in [
-            (digits[:2], digits[2:4], digits[4:]),
-            (digits[4:6], digits[6:], digits[:4]),
-        ]:
-            m, d, y = int(m_s), int(d_s), int(y_s)
-            if 1 <= m <= 12 and 1900 <= y <= 2100:
-                max_day = 29 if m == 2 else (30 if m in (4, 6, 9, 11) else 31)
-                if m == 2 and calendar.isleap(y):
-                    max_day = 29
-                if 1 <= d <= max_day:
-                    return True
+    """Check that a date string represents a real calendar date.
+
+    Handles separated formats: M/D/YYYY, MM/DD/YYYY, YYYY/MM/DD,
+    MM/DD/YY, and variations with - or . separators.
+    """
+    import re as _re
+
+    parts = _re.split(r"[/\-.]", value)
+    if len(parts) != 3:
+        return False
+
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return False
+
+    candidates: list[tuple[int, int, int]] = []
+    a, b, c = nums
+
+    if a > 31:
+        # YYYY/MM/DD or YY/MM/DD
+        year = a if a >= 100 else (a + 2000 if a < 50 else a + 1900)
+        candidates.append((b, c, year))
+    elif c > 31:
+        # MM/DD/YYYY or MM/DD/YY
+        year = c if c >= 100 else (c + 2000 if c < 50 else c + 1900)
+        candidates.append((a, b, year))
+    else:
+        # Ambiguous: try MM/DD/YY with century expansion
+        year = c + 2000 if c < 50 else c + 1900
+        candidates.append((a, b, year))
+
+    for m, d, y in candidates:
+        if not (1 <= m <= 12 and 1900 <= y <= 2100):
+            continue
+        if m == 2:
+            max_day = 29 if calendar.isleap(y) else 28
+        elif m in (4, 6, 9, 11):
+            max_day = 30
+        else:
+            max_day = 31
+        if 1 <= d <= max_day:
+            return True
+
     return False
 
 

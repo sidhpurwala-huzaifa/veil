@@ -48,4 +48,31 @@ class FilteredDetector:
 
     def detect(self, text: str) -> list[Finding]:
         findings = [f for f in self._detector.detect(text) if not self._is_allowed(f.text)]
+        if self._denylist:
+            findings = self._add_denylist_hits(text, findings)
+        return findings
+
+    def _add_denylist_hits(self, text: str, findings: list[Finding]) -> list[Finding]:
+        """Scan text for denylist values and add them at confidence 1.0."""
+        covered = {(f.start, f.end) for f in findings}
+        for value in self._denylist:
+            start = 0
+            while True:
+                idx = text.find(value, start)
+                if idx == -1:
+                    break
+                end = idx + len(value)
+                if (idx, end) not in covered:
+                    findings.append(
+                        Finding(
+                            entity_type=getattr(self._detector, "entity_type", "DENYLIST"),
+                            start=idx,
+                            end=end,
+                            text=value,
+                            confidence=1.0,
+                            detector=self.name,
+                        )
+                    )
+                    covered.add((idx, end))
+                start = end
         return findings
