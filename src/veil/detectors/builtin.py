@@ -9,17 +9,18 @@ engine in favor of the higher-confidence finding.
 
 from __future__ import annotations
 
-from .base import RegexDetector
+import re
+
+from .base import Detector, RegexDetector
+from .context import ContextBooster
 from . import validators
+from ..types import Finding
 
 
-def default_detectors() -> list[RegexDetector]:
+def default_detectors() -> list[Detector]:
     return [
-        RegexDetector(
-            "EMAIL",
-            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}",
-            confidence=0.95,
-        ),
+        # -- existing (hardened) -----------------------------------------------
+        _email_detector(),
         RegexDetector(
             "CREDIT_CARD",
             r"\b\d(?:[ -]?\d){12,18}\b",
@@ -28,14 +29,14 @@ def default_detectors() -> list[RegexDetector]:
         ),
         RegexDetector(
             "US_SSN",
-            # Dashed form only: bare 9-digit runs are too noisy for a default.
             r"\b(?!000|666|9\d{2})\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b",
             confidence=0.85,
+            validator=validators.ssn_not_itin,
         ),
         RegexDetector(
             "PHONE",
-            # Separator-bearing NANP-style, or explicit international +digits.
-            r"(?:\+\d{1,3}[ .-]?)?\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}\b|\+\d{7,15}\b",
+            # Negative lookbehind for 'v' and version-like context.
+            r"(?<!v)(?<!\d\.)(?:\+\d{1,3}[ .-]?)?\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}\b|\+\d{7,15}\b",
             confidence=0.65,
             validator=validators.phone_digit_count,
         ),
@@ -58,7 +59,158 @@ def default_detectors() -> list[RegexDetector]:
         ),
         RegexDetector(
             "API_KEY",
-            r"\bsk-[A-Za-z0-9_-]{20,}\b|\bghp_[A-Za-z0-9]{36}\b",
+            # OpenAI (sk-), Anthropic (sk-ant-), Stripe (sk_live_, sk_test_,
+            # pk_live_, pk_test_), GitHub PAT (ghp_).
+            r"\bsk-[A-Za-z0-9_-]{20,}\b"
+            r"|\bsk-ant-[A-Za-z0-9_-]{20,}\b"
+            r"|\b[sp]k_(?:live|test)_[A-Za-z0-9]{24,}\b"
+            r"|\bghp_[A-Za-z0-9]{36}\b",
             confidence=0.95,
         ),
+        # -- new: credentials / secrets ----------------------------------------
+        RegexDetector(
+            "US_ITIN",
+            r"\b9\d{2}-[7-9]\d-\d{4}\b",
+            confidence=0.85,
+        ),
+        _private_key_detector(),
+        RegexDetector(
+            "JWT",
+            r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b",
+            confidence=0.95,
+            validator=validators.jwt_structure,
+        ),
+        RegexDetector(
+            "SLACK_TOKEN",
+            r"\bxox[bpras]-[A-Za-z0-9-]{10,}\b",
+            confidence=0.99,
+        ),
+        RegexDetector(
+            "GCP_API_KEY",
+            r"\bAIza[0-9A-Za-z_-]{35}\b",
+            confidence=0.95,
+        ),
+        RegexDetector(
+            "GENERIC_SECRET",
+            r"(?i)(?:password|passwd|secret|token|api_key|apikey|api-key)\s*[=:]\s*[\"']?([^\s\"']{8,})",
+            confidence=0.70,
+        ),
+        # -- new: network / infra ----------------------------------------------
+        RegexDetector(
+            "IPV6_ADDRESS",
+            r"(?<![:\w])(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b"
+            r"|(?<![:\w])(?:[0-9a-fA-F]{1,4}:){1,7}:"
+            r"|(?<![:\w])(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b"
+            r"|(?<![:\w])::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}\b"
+            r"|(?<![:\w])::(?![:\w])",
+            confidence=0.9,
+            validator=validators.ipv6_structure,
+        ),
+        RegexDetector(
+            "MAC_ADDRESS",
+            r"\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\b",
+            confidence=0.85,
+        ),
+        RegexDetector(
+            "URL",
+            r"https?://[^\s<>\"']+",
+            confidence=0.7,
+        ),
+        # -- new: context-gated personal identifiers ---------------------------
+        ContextBooster(
+            RegexDetector(
+                "DATE_OF_BIRTH",
+                r"\b\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\b"
+                r"|\b\d{4}[/\-\.]\d{1,2}[/\-\.]\d{1,2}\b",
+                confidence=0.45,
+                validator=validators.valid_date,
+            ),
+            keywords=["dob", "born", "birthday", "date of birth", "birth date", "birthdate"],
+            boost=0.40,
+            window=80,
+        ),
+        ContextBooster(
+            RegexDetector(
+                "PASSPORT_US",
+                r"\b[0-9]{9}\b",
+                confidence=0.40,
+            ),
+            keywords=["passport", "passport number", "passport no", "passport#"],
+            boost=0.45,
+            window=60,
+        ),
     ]
+
+
+class _EmailDetector:
+    """Email detector that rejects matches inside URLs (scheme://user@host)."""
+
+    name = "regex:email"
+
+    _PATTERN = re.compile(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+        r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}"
+    )
+    _SCHEME_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://")
+
+    def detect(self, text: str) -> list[Finding]:
+        findings: list[Finding] = []
+        for m in self._PATTERN.finditer(text):
+            if self._inside_url(text, m.start()):
+                continue
+            findings.append(
+                Finding(
+                    entity_type="EMAIL",
+                    start=m.start(),
+                    end=m.end(),
+                    text=m.group(0),
+                    confidence=0.95,
+                    detector=self.name,
+                )
+            )
+        return findings
+
+    def _inside_url(self, text: str, pos: int) -> bool:
+        """Check whether *pos* falls inside a scheme://... URL."""
+        before = text[:pos]
+        scheme_end = before.rfind("://")
+        if scheme_end == -1:
+            return False
+        # No whitespace between :// and the match → we're inside a URL.
+        segment = before[scheme_end:]
+        return " " not in segment and "\t" not in segment and "\n" not in segment
+
+
+def _email_detector() -> _EmailDetector:
+    return _EmailDetector()
+
+
+class _PrivateKeyDetector:
+    """Multiline detector for PEM-encoded private key blocks."""
+
+    name = "regex:private_key"
+
+    _PATTERN = re.compile(
+        r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"
+        r"[\s\S]*?"
+        r"-----END (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",
+    )
+
+    def detect(self, text: str) -> list[Finding]:
+        findings: list[Finding] = []
+        for m in self._PATTERN.finditer(text):
+            findings.append(
+                Finding(
+                    entity_type="PRIVATE_KEY",
+                    start=m.start(),
+                    end=m.end(),
+                    text=m.group(0),
+                    confidence=0.99,
+                    detector=self.name,
+                )
+            )
+        return findings
+
+
+def _private_key_detector() -> _PrivateKeyDetector:
+    return _PrivateKeyDetector()

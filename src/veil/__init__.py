@@ -5,7 +5,7 @@ before it leaves your boundary, and re-hydrate the model's response
 (streaming or not) on the way back.
 """
 
-from .detectors import Detector, RegexDetector, default_detectors
+from .detectors import ContextBooster, Detector, FilteredDetector, RegexDetector, default_detectors
 from .engine import MessageScrubResult, Scrubber, ScrubResult
 from .policy import Policy, Rule
 from .session import ScrubSession
@@ -16,7 +16,9 @@ __version__ = "0.1.0"
 
 __all__ = [
     "Action",
+    "ContextBooster",
     "Detector",
+    "FilteredDetector",
     "Finding",
     "MessageScrubResult",
     "PIIBlockedError",

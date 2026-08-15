@@ -32,7 +32,7 @@ The model never sees the real values. Your users never see the tokens.
 
 ```bash
 pip install -e ".[dev]"   # from a checkout
-pytest                     # 36 tests, <1s
+pytest                     # 104 tests, <1s
 ```
 
 ## Quickstart
@@ -142,21 +142,82 @@ alone proves.
 | `CREDIT_CARD` | Luhn mod-10 | 0.99 |
 | `IBAN` | ISO 13616 mod-97 | 0.99 |
 | `AWS_ACCESS_KEY` | AKIA/ASIA prefix format | 0.99 |
-| `API_KEY` | `sk-…`, `ghp_…` formats | 0.95 |
-| `EMAIL` | — | 0.95 |
-| `IP_ADDRESS` | octet range check | 0.90 |
-| `US_SSN` | dashed form, area-number rules | 0.85 |
-| `PHONE` | 10–15 digit count | 0.65 |
+| `PRIVATE_KEY` | PEM block delimiters | 0.99 |
+| `SLACK_TOKEN` | `xox[bpras]-…` prefix | 0.99 |
+| `JWT` | base64url structure check | 0.95 |
+| `GCP_API_KEY` | `AIza…` prefix | 0.95 |
+| `API_KEY` | `sk-…`, `sk-ant-…`, `sk_live_…`, `ghp_…` | 0.95 |
+| `EMAIL` | URL-context exclusion | 0.95 |
+| `IP_ADDRESS` | octet range, RFC 5737 exclusion | 0.90 |
+| `IPV6_ADDRESS` | structural validation | 0.90 |
+| `US_SSN` | dashed form, area-number rules, ITIN exclusion | 0.85 |
+| `US_ITIN` | IRS range rules | 0.85 |
+| `MAC_ADDRESS` | — | 0.85 |
+| `URL` | `https?://…` | 0.70 |
+| `GENERIC_SECRET` | `password=…`, `secret:…` key-value patterns | 0.70 |
+| `PHONE` | 10–15 digit count, version-string exclusion | 0.65 |
+| `DATE_OF_BIRTH` | calendar date + keyword context required | context-gated |
+| `PASSPORT_US` | 9 digits + keyword context required | context-gated |
 
 Overlaps (a card number that also looks phone-shaped) are resolved in favor
 of higher confidence, then longer span.
+
+### Context-gated detectors
+
+Some patterns (dates, passport numbers) are too noisy without context.
+`DATE_OF_BIRTH` and `PASSPORT_US` only fire when a keyword like "dob",
+"birthday", or "passport" appears nearby. Under the hood these use
+`ContextBooster`, which you can also apply to your own detectors:
+
+```python
+from veil import ContextBooster, RegexDetector
+
+my_detector = ContextBooster(
+    RegexDetector("MRN", r"\b\d{7}\b", confidence=0.4),
+    keywords=["medical record", "mrn", "patient id"],
+    boost=0.45,
+    window=60,
+)
+```
+
+### Allowlisting
+
+Skip known-safe values so they don't produce findings:
+
+```python
+import re
+from veil import Scrubber
+
+scrubber = Scrubber(
+    allowlist={"test@example.com"},
+    allowlist_patterns=[re.compile(r".*@mycompany\.com")],
+)
+```
+
+### Locale packs
+
+Opt-in detector packs for non-US/English identifiers:
+
+```python
+from veil import Scrubber, default_detectors
+from veil.detectors.locale import locale_detectors
+
+scrubber = Scrubber(detectors=default_detectors() + locale_detectors("GB"))
+```
+
+| Locale | Entities |
+|---|---|
+| `GB` | `UK_NINO` (National Insurance Number) |
+| `CA` | `CA_SIN` (Social Insurance Number, Luhn-validated) |
+| `IN` | `AADHAAR` (Verhoeff checksum) |
+| `EU` | `EU_VAT` (VAT identification numbers) |
 
 ## Writing a custom detector
 
 A detector is anything with a `name` and `detect(text) -> list[Finding]`.
 
 ```python
-from veil import Finding, RegexDetector, Scrubber, default_detectors
+from veil import ContextBooster, Finding, RegexDetector, Scrubber, default_detectors
 
 # 1. declarative: regex + optional validator
 employee_id = RegexDetector(
@@ -215,12 +276,18 @@ Layout:
 
 ```
 src/veil/
-  types.py        Finding, Action, PIIBlockedError
-  policy.py       Rule, Policy
-  detectors/      Detector protocol, RegexDetector, validators, built-ins
-  session.py      ScrubSession — reversible token map, serialization
-  streaming.py    StreamRehydrator — chunk-boundary-safe re-hydration
-  engine.py       Scrubber — detect → policy → transform, message helpers
+  types.py           Finding, Action, PIIBlockedError
+  policy.py          Rule, Policy
+  detectors/
+    base.py          Detector protocol, RegexDetector
+    builtin.py       20 built-in detectors (default_detectors())
+    validators.py    Luhn, IBAN, Verhoeff, IPv4/6, date, JWT, NINO, etc.
+    context.py       ContextBooster — keyword-proximity confidence scoring
+    filters.py       FilteredDetector — allowlist/denylist wrapper
+    locale.py        Opt-in locale packs (GB, CA, IN, EU)
+  session.py         ScrubSession — reversible token map, serialization
+  streaming.py       StreamRehydrator — chunk-boundary-safe re-hydration
+  engine.py          Scrubber — detect → policy → transform, message helpers
 tests/
 ```
 
