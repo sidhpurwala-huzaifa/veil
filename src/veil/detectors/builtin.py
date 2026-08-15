@@ -17,6 +17,40 @@ from . import validators
 from ..types import Finding
 
 
+def _dob_regex() -> RegexDetector:
+    """Date-of-birth regex shared by default detectors and locale packs."""
+    return RegexDetector(
+        "DATE_OF_BIRTH",
+        r"\b\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\b"
+        r"|\b\d{4}[/\-\.]\d{1,2}[/\-\.]\d{1,2}\b",
+        confidence=0.45,
+        validator=validators.valid_date,
+    )
+
+
+DOB_KEYWORDS_EN = [
+    "dob", "born", "birthday", "date of birth", "birth date", "birthdate",
+]
+
+
+def _passport_regex() -> RegexDetector:
+    """Passport-number regex shared by default detectors and locale packs.
+
+    Covers US (9 digits), UK (9 digits), EU (1-2 letters + 6-7 digits),
+    and most other national formats.
+    """
+    return RegexDetector(
+        "PASSPORT",
+        r"\b[A-Z]{0,2}\d{6,9}\b",
+        confidence=0.40,
+    )
+
+
+PASSPORT_KEYWORDS_EN = [
+    "passport", "passport number", "passport no", "passport#",
+]
+
+
 def default_detectors() -> list[Detector]:
     return [
         # -- existing (hardened) -----------------------------------------------
@@ -35,8 +69,17 @@ def default_detectors() -> list[Detector]:
         ),
         RegexDetector(
             "PHONE",
+            # International: +CC with flexible digit groups (validator gates on count).
+            # US domestic: (xxx) xxx-xxxx.
             # Negative lookbehind for 'v' and version-like context.
-            r"(?<!v)(?<!\d\.)(?:\+\d{1,3}[ .-]?)?\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}\b|\+\d{7,15}\b",
+            r"(?<!v)(?<!\d\.)"
+            r"(?:"
+            r"(?:\+\d{1,3}[ .\-]?)"
+            r"(?:\(?\d{1,5}\)?[ .\-]?)?"
+            r"(?:\d[\d .\-]{4,12}\d)"
+            r"|"
+            r"(?:\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4})"
+            r")",
             confidence=0.65,
             validator=validators.phone_digit_count,
         ),
@@ -116,26 +159,16 @@ def default_detectors() -> list[Detector]:
             r"https?://[^\s<>\"']+",
             confidence=0.7,
         ),
-        # -- new: context-gated personal identifiers ---------------------------
+        # -- context-gated personal identifiers --------------------------------
         ContextBooster(
-            RegexDetector(
-                "DATE_OF_BIRTH",
-                r"\b\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\b"
-                r"|\b\d{4}[/\-\.]\d{1,2}[/\-\.]\d{1,2}\b",
-                confidence=0.45,
-                validator=validators.valid_date,
-            ),
-            keywords=["dob", "born", "birthday", "date of birth", "birth date", "birthdate"],
+            _dob_regex(),
+            keywords=DOB_KEYWORDS_EN,
             boost=0.40,
             window=80,
         ),
         ContextBooster(
-            RegexDetector(
-                "PASSPORT_US",
-                r"\b[0-9]{9}\b",
-                confidence=0.40,
-            ),
-            keywords=["passport", "passport number", "passport no", "passport#"],
+            _passport_regex(),
+            keywords=PASSPORT_KEYWORDS_EN,
             boost=0.45,
             window=60,
         ),

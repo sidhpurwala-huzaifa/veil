@@ -109,7 +109,7 @@ The 20 built-in detectors now span structured PII (EMAIL, SSN, ITIN,
 CREDIT_CARD, PHONE, IBAN), infrastructure identifiers (IP_ADDRESS,
 IPV6_ADDRESS, MAC_ADDRESS, URL), and secrets/credentials (AWS_ACCESS_KEY,
 API_KEY, PRIVATE_KEY, JWT, SLACK_TOKEN, GCP_API_KEY, GENERIC_SECRET), plus
-two context-gated personal identifiers (DATE_OF_BIRTH, PASSPORT_US).
+two context-gated personal identifiers (DATE_OF_BIRTH, PASSPORT).
 
 Locale-specific detectors (UK_NINO, CA_SIN, AADHAAR, EU_VAT) live in
 `detectors/locale.py` and are opt-in via `locale_detectors("GB")`.
@@ -239,7 +239,8 @@ Phased so each stage ships something deployable:
   backend's job — document this loudly in any `SessionStore` implementation.
 - No thread-safety guarantees on a shared session yet; one session per
   conversation is the supported pattern.
-- Context-gated detectors (`DATE_OF_BIRTH`, `PASSPORT_US`) rely on keyword
+- Context-gated detectors (`DATE_OF_BIRTH`, `PASSPORT`) rely on keyword
   proximity heuristics — they will miss values that appear far from any
-  keyword or in unexpected phrasing. Tier 2/3 detectors are needed for
-  robust coverage of these categories.
+  keyword or in unexpected phrasing. Locale packs (`locale_detectors()`)
+  inject translated keywords for non-English text. Tier 2/3 detectors are
+  needed for robust coverage of these categories.

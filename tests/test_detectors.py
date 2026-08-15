@@ -146,6 +146,12 @@ class TestBuiltinDetectors:
         assert "PHONE" in types_found("call (212) 555-0173 now")
         assert "PHONE" in types_found("intl +442071838750")
 
+    def test_phone_international_formats(self):
+        assert "PHONE" in types_found("call +46 70 123 4567")
+        assert "PHONE" in types_found("tel: +55 11 3456-7890")
+        assert "PHONE" in types_found("num +86-21-5678-9012")
+        assert "PHONE" in types_found("ph: +39 333 1234567")
+
     def test_ip(self):
         assert "IP_ADDRESS" in types_found("host 192.168.1.10 is up")
         assert "IP_ADDRESS" not in types_found("version 999.888.777.666")
@@ -258,10 +264,13 @@ class TestContextGatedDetectors:
         assert "DATE_OF_BIRTH" not in types_found("the date is 01/15/1990")
 
     def test_passport_with_context(self):
-        assert "PASSPORT_US" in types_found("passport number 123456789")
+        assert "PASSPORT" in types_found("passport number 123456789")
 
     def test_passport_without_context_dropped(self):
-        assert "PASSPORT_US" not in types_found("order 123456789 confirmed")
+        assert "PASSPORT" not in types_found("order 123456789 confirmed")
+
+    def test_passport_with_letter_prefix(self):
+        assert "PASSPORT" in types_found("passport AB1234567")
 
 
 # ---------------------------------------------------------------------------

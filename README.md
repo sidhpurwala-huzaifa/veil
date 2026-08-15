@@ -157,7 +157,7 @@ alone proves.
 | `GENERIC_SECRET` | `password=…`, `secret:…` key-value patterns | 0.70 |
 | `PHONE` | 10–15 digit count, version-string exclusion | 0.65 |
 | `DATE_OF_BIRTH` | calendar date + keyword context required | context-gated |
-| `PASSPORT_US` | 9 digits + keyword context required | context-gated |
+| `PASSPORT` | 6–9 digits (optional letter prefix) + keyword context | context-gated |
 
 Overlaps (a card number that also looks phone-shaped) are resolved in favor
 of higher confidence, then longer span.
@@ -165,9 +165,11 @@ of higher confidence, then longer span.
 ### Context-gated detectors
 
 Some patterns (dates, passport numbers) are too noisy without context.
-`DATE_OF_BIRTH` and `PASSPORT_US` only fire when a keyword like "dob",
-"birthday", or "passport" appears nearby. Under the hood these use
-`ContextBooster`, which you can also apply to your own detectors:
+`DATE_OF_BIRTH` and `PASSPORT` only fire when a keyword like "dob",
+"birthday", or "passport" appears nearby. Locale packs add translated
+keywords (e.g. `locale_detectors("DE")` adds "Geburtsdatum", "Reisepass").
+Under the hood these use `ContextBooster`, which you can also apply to your
+own detectors:
 
 ```python
 from veil import ContextBooster, RegexDetector

@@ -18,7 +18,7 @@ REDACT_TO_VEIL: dict[str, str | None] = {
     "Static_IP_Address":            "IP_ADDRESS",
     "Credit_Card_Numbers":          "CREDIT_CARD",
     "Date_of_Birth":                "DATE_OF_BIRTH",
-    "Passport_Number":              "PASSPORT_US",
+    "Passport_Number":              "PASSPORT",
     "Tax_Reference_Number":         "US_ITIN",
     "Password":                     "GENERIC_SECRET",
 

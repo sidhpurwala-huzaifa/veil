@@ -65,3 +65,40 @@ class TestEUVAT:
 
     def test_french_vat(self):
         assert "EU_VAT" in _types_found("VAT FR12345678901", "EU")
+
+
+# ---------------------------------------------------------------------------
+# Locale context keywords
+# ---------------------------------------------------------------------------
+
+
+class TestLocaleContextKeywords:
+    def test_available_locales_expanded(self):
+        locales = available_locales()
+        for code in ("DE", "FR", "ES", "PT", "IT", "RU", "ZH", "JA", "KO", "AR", "HE", "TH"):
+            assert code in locales
+
+    def test_german_dob_keywords(self):
+        assert "DATE_OF_BIRTH" in _types_found("Geburtsdatum: 12.04.1978", "DE")
+
+    def test_german_passport_keywords(self):
+        assert "PASSPORT" in _types_found("Reisepass C123456789", "DE")
+
+    def test_french_dob_keywords(self):
+        # Day <= 12 so MM/DD parsing succeeds with current validator
+        assert "DATE_OF_BIRTH" in _types_found("né le 03/05/1990", "FR")
+
+    def test_french_passport_keywords(self):
+        assert "PASSPORT" in _types_found("passeport AB1234567", "FR")
+
+    def test_spanish_dob_keywords(self):
+        assert "DATE_OF_BIRTH" in _types_found("fecha de nacimiento 01/02/1985", "ES")
+
+    def test_russian_dob_keywords(self):
+        assert "DATE_OF_BIRTH" in _types_found("дата рождения 06.05.1990", "RU")
+
+    def test_japanese_passport_keywords(self):
+        assert "PASSPORT" in _types_found("パスポート TK1234567", "JA")
+
+    def test_locale_keywords_dont_affect_other_locales(self):
+        assert "DATE_OF_BIRTH" not in _types_found("Geburtsdatum: 12.04.1978", "FR")

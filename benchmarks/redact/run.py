@@ -132,14 +132,14 @@ def _dedup_gold_spans(spans: list[Span]) -> list[Span]:
 def _run_veil(
     records: list[dict],
     use_ner: bool = False,
-    ner_model: str = "en_core_web_sm",
+    ner_model: str | list[str] = "en_core_web_sm",
 ) -> list[tuple[list[Span], list[Span]]]:
     """Run veil detectors on every record, return (gold, pred) span pairs."""
     detectors = default_detectors()
     if use_ner:
         from veil.detectors.ner import ner_detectors
 
-        models = [m.strip() for m in ner_model.split(",")]
+        models = ner_model if isinstance(ner_model, list) else [ner_model]
         detectors = detectors + ner_detectors(model=models if len(models) > 1 else models[0])
     scrubber = Scrubber(detectors=detectors)
     results: list[tuple[list[Span], list[Span]]] = []
@@ -330,7 +330,7 @@ def main():
     parser.add_argument("--out", type=str, default=None, help="Write report to file")
     parser.add_argument("--data", type=str, default=None, help="Path to REDACT JSON sample")
     parser.add_argument("--ner", action="store_true", help="Include Tier 2 NER detectors")
-    parser.add_argument("--model", type=str, default="en_core_web_sm", help="spaCy model for NER")
+    parser.add_argument("--model", type=str, nargs="+", default=["en_core_web_sm"], help="spaCy model(s) for NER")
     args = parser.parse_args()
 
     # Load data.
