@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import copy
+import re
 from dataclasses import dataclass
 from typing import Any, Sequence
 
 from .detectors import Detector, default_detectors
+from .detectors.filters import FilteredDetector
 from .policy import Policy
 from .session import ScrubSession
 from .streaming import StreamRehydrator
@@ -36,8 +38,17 @@ class Scrubber:
         self,
         detectors: Sequence[Detector] | None = None,
         policy: Policy | None = None,
+        allowlist: set[str] | None = None,
+        allowlist_patterns: Sequence[re.Pattern[str]] | None = None,
     ):
-        self.detectors: list[Detector] = list(detectors) if detectors is not None else default_detectors()
+        raw: list[Detector] = list(detectors) if detectors is not None else default_detectors()
+        if allowlist or allowlist_patterns:
+            self.detectors = [
+                FilteredDetector(d, allowlist=allowlist, allowlist_patterns=allowlist_patterns)
+                for d in raw
+            ]
+        else:
+            self.detectors = raw
         self.policy = policy if policy is not None else Policy.default()
 
     # -- outbound ----------------------------------------------------------

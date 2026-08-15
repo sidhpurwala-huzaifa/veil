@@ -95,6 +95,29 @@ Built-in confidence values encode evidence strength: checksum-validated
 matches (card, IBAN) are 0.99; format-only matches (email) 0.9–0.95;
 ambiguous shapes (phone) 0.65 and rely on the policy floor.
 
+Two composable wrappers sit on top of `Detector`:
+
+- **`ContextBooster`** (context.py) — adjusts confidence based on keyword
+  proximity. Context-gated detectors (DOB, passport) use a low base
+  confidence that drops below the policy threshold without a keyword, and a
+  boost that lifts it past the threshold when context confirms the finding.
+- **`FilteredDetector`** (filters.py) — drops findings matching an allowlist
+  (exact values or regex patterns). Integrated into `Scrubber` via the
+  `allowlist` / `allowlist_patterns` constructor parameters.
+
+The 20 built-in detectors now span structured PII (EMAIL, SSN, ITIN,
+CREDIT_CARD, PHONE, IBAN), infrastructure identifiers (IP_ADDRESS,
+IPV6_ADDRESS, MAC_ADDRESS, URL), and secrets/credentials (AWS_ACCESS_KEY,
+API_KEY, PRIVATE_KEY, JWT, SLACK_TOKEN, GCP_API_KEY, GENERIC_SECRET), plus
+two context-gated personal identifiers (DATE_OF_BIRTH, PASSPORT_US).
+
+Locale-specific detectors (UK_NINO, CA_SIN, AADHAAR, EU_VAT) live in
+`detectors/locale.py` and are opt-in via `locale_detectors("GB")`.
+
+False-positive hardening: EMAIL rejects matches inside URLs (`://…@…`);
+IP_ADDRESS excludes RFC 5737 documentation ranges and broadcast addresses;
+PHONE excludes version-string patterns; US_SSN rejects ITIN ranges.
+
 ### policy.py — decision layer
 `Policy` maps entity type → `Rule(action, min_confidence)`. Unknown types hit
 the default rule (TOKENIZE @ 0.5), so registering a new detector is
@@ -163,7 +186,10 @@ sharing one session across the whole list.
 
 | Seam | Interface | Status |
 |---|---|---|
-| Detection | `Detector` protocol | shipped; NER/LLM tiers plug in here |
+| Detection | `Detector` protocol | shipped (20 built-ins); NER/LLM tiers plug in here |
+| Context scoring | `ContextBooster` wrapper | shipped; keyword-proximity confidence adjustment |
+| Allowlisting | `FilteredDetector` wrapper / `Scrubber(allowlist=…)` | shipped; exact values and regex patterns |
+| Locale packs | `locale_detectors(locale)` | shipped (GB, CA, IN, EU); add packs by registering in `locale.py` |
 | Policy | `Policy`/`Rule` objects | shipped; YAML/policy-pack loader planned |
 | Session persistence | `to_dict()/from_dict()` | shipped; `SessionStore` protocol planned (redis, DB, vault service) |
 | Transform | `Action` enum | shipped; candidate addition: `SYNTHESIZE` (realistic fake values) for workloads where token shapes confuse the model |
@@ -199,8 +225,9 @@ Phased so each stage ships something deployable:
 
 - No free-text name/address/health detection — tier 1 is structured PII only.
   Do not deploy this alone against GDPR Article 9 exposure.
-- English/US-centric built-ins (SSN, NANP phone). Locale packs belong in
-  tier 2 planning.
+- Locale packs (GB, CA, IN, EU) cover the most common identifiers per locale
+  but are not exhaustive. Comprehensive locale coverage belongs in tier 2
+  planning alongside NER models that handle free-form addresses and names.
 - `MASK` output (`[REDACTED_TYPE]`) matches the token character class; it can
   never collide (no trailing `_N`), but a model might echo it — re-hydration
   correctly leaves it untouched.
@@ -209,3 +236,7 @@ Phased so each stage ships something deployable:
   backend's job — document this loudly in any `SessionStore` implementation.
 - No thread-safety guarantees on a shared session yet; one session per
   conversation is the supported pattern.
+- Context-gated detectors (`DATE_OF_BIRTH`, `PASSPORT_US`) rely on keyword
+  proximity heuristics — they will miss values that appear far from any
+  keyword or in unexpected phrasing. Tier 2/3 detectors are needed for
+  robust coverage of these categories.
