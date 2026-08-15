@@ -42,7 +42,10 @@ lightweight models are competitive. Conclusion baked into the architecture:
 
 - **Tier 1 (shipped):** regex + checksum validators. Deterministic, auditable,
   fast, zero dependencies. The floor, never the ceiling.
-- **Tier 2 (planned plugin):** NER span models for names/addresses/orgs.
+- **Tier 2 (shipped, extras):** NER span models via spaCy (`veil-pii[ner]`).
+  Detects PERSON_NAME, ORGANIZATION, LOCATION, DATE_TIME, NORP_GROUP.
+  Supports 25+ languages via language-specific or multilingual models.
+  See `docs/ner-models.md`.
 - **Tier 3 (planned plugin):** LLM classifier for semantic and Article 9
   categories. Non-deterministic, so it must be *additive* detection — never
   the sole mechanism on a compliance-critical path, and its findings carry
@@ -111,8 +114,20 @@ IPV6_ADDRESS, MAC_ADDRESS, URL), and secrets/credentials (AWS_ACCESS_KEY,
 API_KEY, PRIVATE_KEY, JWT, SLACK_TOKEN, GCP_API_KEY, GENERIC_SECRET), plus
 two context-gated personal identifiers (DATE_OF_BIRTH, PASSPORT).
 
-Locale-specific detectors (UK_NINO, CA_SIN, AADHAAR, EU_VAT) live in
-`detectors/locale.py` and are opt-in via `locale_detectors("GB")`.
+Locale packs live in `detectors/locale.py` and are opt-in via
+`locale_detectors("GB")`. Each pack can contribute two things:
+
+- **Regex detectors** — locale-specific patterns (UK_NINO, CA_SIN, AADHAAR,
+  EU_VAT) with validators.
+- **Context keywords** — translated keywords for `DATE_OF_BIRTH` and
+  `PASSPORT` (e.g. German "Geburtsdatum", French "passeport"). These are
+  implemented as additional `ContextBooster` instances wrapping the same
+  regex factories used by the defaults, so overlap resolution deduplicates
+  naturally.
+
+17 locales are registered: GB, CA, IN, EU, DE, FR, ES, PT, IT, RU, ZH, JA,
+KO, AR, HE, TH (keyword-only packs are trivial to add — a single
+`_register()` call).
 
 False-positive hardening: EMAIL rejects matches inside URLs (`://…@…`);
 IP_ADDRESS excludes RFC 5737 documentation ranges and broadcast addresses;
@@ -189,7 +204,7 @@ sharing one session across the whole list.
 | Detection | `Detector` protocol | shipped (20 built-ins + Tier 2 NER); LLM tier plugs in here |
 | Context scoring | `ContextBooster` wrapper | shipped; keyword-proximity confidence adjustment |
 | Allowlisting | `FilteredDetector` wrapper / `Scrubber(allowlist=…)` | shipped; exact values and regex patterns |
-| Locale packs | `locale_detectors(locale)` | shipped (GB, CA, IN, EU); add packs by registering in `locale.py` |
+| Locale packs | `locale_detectors(locale)` | shipped (17 locales: GB, CA, IN, EU + 13 keyword packs); add packs by registering in `locale.py` |
 | Policy | `Policy`/`Rule` objects | shipped; YAML/policy-pack loader planned |
 | Session persistence | `to_dict()/from_dict()` | shipped; `SessionStore` protocol planned (redis, DB, vault service) |
 | Transform | `Action` enum | shipped; candidate addition: `SYNTHESIZE` (realistic fake values) for workloads where token shapes confuse the model |
@@ -205,10 +220,12 @@ Phased so each stage ships something deployable:
    Python SDKs (`veil.wrap(client, policy=...)`) so integration is one line;
    per-provider streaming tests against real SSE shapes (the LiteLLM lesson:
    re-hydration must be validated per wire format, not per abstraction).
-3. **Detection tier 2/3** — NER plugin (extras dependency, shipped) and
-   LLM-classifier plugin with a hard latency budget and parallel execution
-   (Cloudflare pattern: fire detectors concurrently, hard cap, fall back to
-   completed results — configurable fail-open/fail-closed per entity class).
+3. **Detection tier 2 (shipped) / tier 3** — NER plugin is shipped as an
+   extras dependency (`veil-pii[ner]`). Supports 25+ languages via spaCy.
+   **Next:** LLM-classifier plugin (Tier 3) with a hard latency budget and
+   parallel execution (Cloudflare pattern: fire detectors concurrently, hard
+   cap, fall back to completed results — configurable fail-open/fail-closed
+   per entity class).
    **TODO (next sprint):** introduce a `ModelBackend` protocol so NER
    detection can be backed by non-spaCy runtimes (e.g. HuggingFace
    transformers, GLiNER) without changing the `NerDetector` API.
@@ -226,11 +243,13 @@ Phased so each stage ships something deployable:
 
 ## 7. Known limitations (v0.1)
 
-- No free-text name/address/health detection — tier 1 is structured PII only.
-  Do not deploy this alone against GDPR Article 9 exposure.
-- Locale packs (GB, CA, IN, EU) cover the most common identifiers per locale
-  but are not exhaustive. Comprehensive locale coverage belongs in tier 2
-  planning alongside NER models that handle free-form addresses and names.
+- No free-text health, political, or sexual orientation detection — Tier 1
+  is structured PII and Tier 2 is NER (names/orgs/locations). GDPR Article 9
+  categories require Tier 3 LLM classifiers (planned).
+- Locale packs (17 locales) cover common identifiers and context keywords per
+  locale but are not exhaustive. The `valid_date` validator only parses
+  MM/DD/YYYY and YYYY/MM/DD; DD/MM/YYYY (common in Europe) is a known gap
+  for dates where day > 12.
 - `MASK` output (`[REDACTED_TYPE]`) matches the token character class; it can
   never collide (no trailing `_N`), but a model might echo it — re-hydration
   correctly leaves it untouched.

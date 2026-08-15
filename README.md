@@ -31,8 +31,9 @@ The model never sees the real values. Your users never see the tokens.
 ## Install
 
 ```bash
-pip install -e ".[dev]"   # from a checkout
-pytest                     # 104 tests, <1s
+pip install -e ".[dev]"       # core + test dependencies
+pip install -e ".[ner,dev]"   # include Tier 2 NER (spaCy)
+pytest                         # 146 tests, <3s
 ```
 
 ## Quickstart
@@ -198,21 +199,49 @@ scrubber = Scrubber(
 
 ### Locale packs
 
-Opt-in detector packs for non-US/English identifiers:
+Opt-in packs that add locale-specific regex detectors **and/or** translated
+context keywords for `DATE_OF_BIRTH` and `PASSPORT`. Stack as many as you
+need — overlap resolution handles the rest.
 
 ```python
 from veil import Scrubber, default_detectors
-from veil.detectors.locale import locale_detectors
+from veil.detectors.locale import locale_detectors, available_locales
 
+# Single locale
 scrubber = Scrubber(detectors=default_detectors() + locale_detectors("GB"))
+
+# Multiple locales
+scrubber = Scrubber(
+    detectors=default_detectors()
+              + locale_detectors("DE")
+              + locale_detectors("FR")
+)
+
+# See what's available
+print(available_locales())
 ```
 
-| Locale | Entities |
-|---|---|
-| `GB` | `UK_NINO` (National Insurance Number) |
-| `CA` | `CA_SIN` (Social Insurance Number, Luhn-validated) |
-| `IN` | `AADHAAR` (Verhoeff checksum) |
-| `EU` | `EU_VAT` (VAT identification numbers) |
+| Locale | Regex detectors | Context keywords |
+|---|---|---|
+| `GB` | `UK_NINO` (National Insurance Number) | — |
+| `CA` | `CA_SIN` (Social Insurance Number, Luhn-validated) | — |
+| `IN` | `AADHAAR` (Verhoeff checksum) | DOB, PASSPORT (Hindi) |
+| `EU` | `EU_VAT` (VAT identification numbers) | — |
+| `DE` | — | DOB ("Geburtsdatum", "geboren"), PASSPORT ("Reisepass", "Passnummer") |
+| `FR` | — | DOB ("date de naissance", "né le"), PASSPORT ("passeport") |
+| `ES` | — | DOB ("fecha de nacimiento"), PASSPORT ("pasaporte") |
+| `PT` | — | DOB ("data de nascimento"), PASSPORT ("passaporte") |
+| `IT` | — | DOB ("data di nascita"), PASSPORT ("passaporto") |
+| `RU` | — | DOB ("дата рождения"), PASSPORT ("паспорт") |
+| `ZH` | — | DOB ("出生日期", "生日"), PASSPORT ("护照") |
+| `JA` | — | DOB ("生年月日"), PASSPORT ("パスポート", "旅券番号") |
+| `KO` | — | DOB ("생년월일"), PASSPORT ("여권") |
+| `AR` | — | DOB ("تاريخ الميلاد"), PASSPORT ("جواز سفر") |
+| `HE` | — | DOB ("תאריך לידה"), PASSPORT ("דרכון") |
+| `TH` | — | DOB ("วันเกิด"), PASSPORT ("หนังสือเดินทาง") |
+
+Adding a new locale is a single `_register()` call in `locale.py` — see the
+existing packs for the pattern.
 
 ## Writing a custom detector
 
@@ -254,13 +283,33 @@ def guarded_completion(client, messages, session):
                               session)
 ```
 
+## Tier 2: NER detection (optional)
+
+The built-in Tier 1 detectors handle structured PII. For free-text names,
+organizations, and locations, enable Tier 2 NER via the `[ner]` extra:
+
+```bash
+pip install -e ".[ner]"
+python -m spacy download en_core_web_sm
+```
+
+```python
+from veil import Scrubber, default_detectors
+from veil.detectors.ner import ner_detectors
+
+scrubber = Scrubber(detectors=default_detectors() + ner_detectors())
+```
+
+NER detectors implement the same `Detector` protocol — the engine treats
+their findings identically to regex findings. See [`docs/ner-models.md`](docs/ner-models.md)
+for available spaCy models, multilingual setup, and performance data.
+
 ## What this is not (yet)
 
-- **Not an NER/LLM detection tier** — the built-ins won't catch free-text
-  names, addresses, or GDPR Article 9 categories (health, religion, sexual
-  orientation…). The `Detector` protocol is the seam where those land.
-  Rule-based detection alone benchmarks very poorly on that data; see
-  ARCHITECTURE.md.
+- **Not an LLM detection tier** — GDPR Article 9 categories (health,
+  religion, sexual orientation…) need semantic classifiers. Tier 2 NER
+  covers names/orgs/locations; Tier 3 LLM classifiers are the planned next
+  step. The `Detector` protocol is the seam where those land.
 - **Not a network gateway** — this is the embeddable core. The reverse-proxy
   deployment (zero app changes, org-wide enforcement) is a planned layer on
   top of this same engine.
@@ -286,11 +335,14 @@ src/veil/
     validators.py    Luhn, IBAN, Verhoeff, IPv4/6, date, JWT, NINO, etc.
     context.py       ContextBooster — keyword-proximity confidence scoring
     filters.py       FilteredDetector — allowlist/denylist wrapper
-    locale.py        Opt-in locale packs (GB, CA, IN, EU)
+    locale.py        Opt-in locale packs (17 locales) + context keywords
+    ner.py           Tier 2 NER via spaCy (requires [ner] extra)
   session.py         ScrubSession — reversible token map, serialization
   streaming.py       StreamRehydrator — chunk-boundary-safe re-hydration
   engine.py          Scrubber — detect → policy → transform, message helpers
 tests/
+docs/
+  ner-models.md      spaCy model reference (languages, sizes, performance)
 ```
 
 See **ARCHITECTURE.md** for the design rationale, invariants, and roadmap.
