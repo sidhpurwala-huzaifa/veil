@@ -5,7 +5,15 @@ before it leaves your boundary, and re-hydrate the model's response
 (streaming or not) on the way back.
 """
 
-from .detectors import ContextBooster, Detector, FilteredDetector, RegexDetector, default_detectors
+from .detectors import (
+    ContextBooster,
+    Detector,
+    FilteredDetector,
+    NerDetector,
+    RegexDetector,
+    default_detectors,
+    ner_detectors,
+)
 from .engine import MessageScrubResult, Scrubber, ScrubResult
 from .policy import Policy, Rule
 from .session import ScrubSession
@@ -21,6 +29,7 @@ __all__ = [
     "FilteredDetector",
     "Finding",
     "MessageScrubResult",
+    "NerDetector",
     "PIIBlockedError",
     "Policy",
     "RegexDetector",
@@ -30,4 +39,5 @@ __all__ = [
     "ScrubSession",
     "StreamRehydrator",
     "default_detectors",
+    "ner_detectors",
 ]

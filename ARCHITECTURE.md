@@ -186,7 +186,7 @@ sharing one session across the whole list.
 
 | Seam | Interface | Status |
 |---|---|---|
-| Detection | `Detector` protocol | shipped (20 built-ins); NER/LLM tiers plug in here |
+| Detection | `Detector` protocol | shipped (20 built-ins + Tier 2 NER); LLM tier plugs in here |
 | Context scoring | `ContextBooster` wrapper | shipped; keyword-proximity confidence adjustment |
 | Allowlisting | `FilteredDetector` wrapper / `Scrubber(allowlist=…)` | shipped; exact values and regex patterns |
 | Locale packs | `locale_detectors(locale)` | shipped (GB, CA, IN, EU); add packs by registering in `locale.py` |
@@ -205,10 +205,13 @@ Phased so each stage ships something deployable:
    Python SDKs (`veil.wrap(client, policy=...)`) so integration is one line;
    per-provider streaming tests against real SSE shapes (the LiteLLM lesson:
    re-hydration must be validated per wire format, not per abstraction).
-3. **Detection tier 2/3** — NER plugin (extras dependency) and LLM-classifier
-   plugin with a hard latency budget and parallel execution (Cloudflare
-   pattern: fire detectors concurrently, hard cap, fall back to completed
-   results — configurable fail-open/fail-closed per entity class).
+3. **Detection tier 2/3** — NER plugin (extras dependency, shipped) and
+   LLM-classifier plugin with a hard latency budget and parallel execution
+   (Cloudflare pattern: fire detectors concurrently, hard cap, fall back to
+   completed results — configurable fail-open/fail-closed per entity class).
+   **TODO (next sprint):** introduce a `ModelBackend` protocol so NER
+   detection can be backed by non-spaCy runtimes (e.g. HuggingFace
+   transformers, GLiNER) without changing the `NerDetector` API.
 4. **SessionStore + audit** — pluggable persistence; structured audit events
    (detections, policy decisions, detokenizations — never values) with a
    stable schema for SIEM ingestion.
