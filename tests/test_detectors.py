@@ -288,3 +288,40 @@ class TestFalsePositiveRegression:
             "the roadmap and v2.1.0 release milestones."
         )
         assert types_found(text) == set()
+
+
+# ---------------------------------------------------------------------------
+# Codex review regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestCodexReviewFixes:
+    def test_ipv6_compressed_full_match(self):
+        """IPv6 compressed addresses must be matched in full, not partially."""
+        text = "host fe80::1 is up"
+        findings = [f for f in _detect(text) if f.entity_type == "IPV6_ADDRESS"]
+        assert len(findings) == 1
+        assert findings[0].text == "fe80::1"
+
+    def test_ipv6_longer_compressed(self):
+        text = "addr 2001:db8::8a2e:370:7334 here"
+        findings = [f for f in _detect(text) if f.entity_type == "IPV6_ADDRESS"]
+        assert len(findings) == 1
+        assert findings[0].text == "2001:db8::8a2e:370:7334"
+
+    def test_dob_single_digit_components(self):
+        """Single-digit day/month in DOB must be detected."""
+        assert "DATE_OF_BIRTH" in types_found("DOB 1/5/1990")
+        assert "DATE_OF_BIRTH" in types_found("birthday 3/9/1985")
+
+    def test_dob_two_digit_year(self):
+        """Two-digit year in DOB must be detected."""
+        assert "DATE_OF_BIRTH" in types_found("born 01/15/90")
+
+    def test_feb_29_non_leap_rejected(self):
+        """Feb 29 in a non-leap year must be rejected by the validator."""
+        assert "DATE_OF_BIRTH" not in types_found("DOB 02/29/2023")
+
+    def test_feb_29_leap_accepted(self):
+        """Feb 29 in a leap year must be accepted."""
+        assert "DATE_OF_BIRTH" in types_found("DOB 02/29/2024")

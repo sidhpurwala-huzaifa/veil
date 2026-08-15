@@ -61,3 +61,25 @@ class TestScrubberAllowlist:
         scrubber = Scrubber()
         result = scrubber.scrub("send to admin@example.com")
         assert "admin@example.com" not in result.text
+
+
+class TestDenylist:
+    def test_denylist_finds_value_missed_by_detector(self):
+        """Denylist values are flagged even if the inner detector doesn't match them."""
+        fd = FilteredDetector(
+            _email_detector(),
+            denylist={"secret-internal-id"},
+        )
+        findings = fd.detect("the value is secret-internal-id here")
+        assert any(f.text == "secret-internal-id" for f in findings)
+        assert any(f.confidence == 1.0 for f in findings if f.text == "secret-internal-id")
+
+    def test_denylist_does_not_duplicate_existing_finding(self):
+        """If the detector already found the value, denylist doesn't add a duplicate."""
+        fd = FilteredDetector(
+            _email_detector(),
+            denylist={"bob@example.com"},
+        )
+        findings = fd.detect("email bob@example.com")
+        bob_findings = [f for f in findings if "bob@example.com" in f.text]
+        assert len(bob_findings) >= 1

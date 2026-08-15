@@ -98,10 +98,10 @@ def default_detectors() -> list[Detector]:
         # -- new: network / infra ----------------------------------------------
         RegexDetector(
             "IPV6_ADDRESS",
-            r"(?<![:\w])(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b"
-            r"|(?<![:\w])(?:[0-9a-fA-F]{1,4}:){1,7}:"
-            r"|(?<![:\w])(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b"
-            r"|(?<![:\w])::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}\b"
+            # Single broad pattern that captures full compressed and expanded
+            # forms.  The validator does the structural check; the regex just
+            # grabs hex-colon runs long enough to be plausible.
+            r"(?<![:\w])(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(?![:\w])"
             r"|(?<![:\w])::(?![:\w])",
             confidence=0.9,
             validator=validators.ipv6_structure,
