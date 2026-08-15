@@ -4,27 +4,7 @@ veil's Tier 2 NER detection uses [spaCy](https://spacy.io/) trained
 pipelines. You choose which model(s) to load — only the models you need
 are downloaded and run.
 
-## Quick start
-
-```bash
-pip install veil-pii[ner]
-python -m spacy download en_core_web_sm      # one-time download
-```
-
-```python
-from veil import Scrubber, default_detectors
-from veil.detectors.ner import ner_detectors
-
-# English only
-scrubber = Scrubber(detectors=default_detectors() + ner_detectors())
-
-# Multilingual — pass a list of models
-scrubber = Scrubber(
-    detectors=default_detectors() + ner_detectors(
-        model=["en_core_web_sm", "zh_core_web_sm", "xx_ent_wiki_sm"]
-    )
-)
-```
+For setup and basic usage, see the [Usage Guide](guide.md#ner-detection-tier-2).
 
 ## Model sizes
 
