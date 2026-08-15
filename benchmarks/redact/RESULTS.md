@@ -1,6 +1,6 @@
 # REDACT Benchmark Results — veil Tier 1
 
-**Date:** 2026-08-15 07:28 UTC  
+**Date:** 2026-08-15 07:47 UTC  
 **Records evaluated:** 1000  
 **Elapsed:** 0.6s  
 **Gold spans (mapped):** 3435  

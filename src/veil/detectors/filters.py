@@ -34,7 +34,7 @@ class FilteredDetector:
     ):
         self._detector = detector
         self._allowlist = allowlist or set()
-        self._denylist = denylist or set()
+        self._denylist = {v for v in (denylist or set()) if v}
         self._allowlist_patterns = list(allowlist_patterns or [])
 
     @property
@@ -53,8 +53,11 @@ class FilteredDetector:
         return findings
 
     def _add_denylist_hits(self, text: str, findings: list[Finding]) -> list[Finding]:
-        """Scan text for denylist values and add them at confidence 1.0."""
-        covered = {(f.start, f.end) for f in findings}
+        """Scan text for denylist values, upgrading or adding at confidence 1.0."""
+        existing_by_span: dict[tuple[int, int], int] = {
+            (f.start, f.end): i for i, f in enumerate(findings)
+        }
+        etype = getattr(self._detector, "entity_type", "DENYLIST")
         for value in self._denylist:
             start = 0
             while True:
@@ -62,10 +65,23 @@ class FilteredDetector:
                 if idx == -1:
                     break
                 end = idx + len(value)
-                if (idx, end) not in covered:
+                span_key = (idx, end)
+                if span_key in existing_by_span:
+                    fi = existing_by_span[span_key]
+                    old = findings[fi]
+                    findings[fi] = Finding(
+                        entity_type=old.entity_type,
+                        start=old.start,
+                        end=old.end,
+                        text=old.text,
+                        confidence=1.0,
+                        detector=old.detector,
+                    )
+                else:
+                    existing_by_span[span_key] = len(findings)
                     findings.append(
                         Finding(
-                            entity_type=getattr(self._detector, "entity_type", "DENYLIST"),
+                            entity_type=etype,
                             start=idx,
                             end=end,
                             text=value,
@@ -73,6 +89,5 @@ class FilteredDetector:
                             detector=self.name,
                         )
                     )
-                    covered.add((idx, end))
                 start = end
         return findings

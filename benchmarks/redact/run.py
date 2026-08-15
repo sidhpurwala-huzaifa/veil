@@ -11,18 +11,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
-import os
+import logging
 import sys
 import time
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Ensure the repo root is on sys.path so veil is importable.
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT / "src"))
+_SRC_DIR = str(_REPO_ROOT / "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
 from veil import Scrubber, default_detectors  # noqa: E402
 from veil.types import Finding  # noqa: E402
@@ -39,20 +40,33 @@ from .metrics import BenchmarkResults, Span, evaluate, exact_match, partial_matc
 # Dataset handling
 # ---------------------------------------------------------------------------
 
+_PINNED_COMMIT = "34c78df19edbbf3b8605284f275592d52825cc5e"
 _SAMPLE_URL = (
     "https://media.githubusercontent.com/media/guneeshvats/"
-    "REDACT-PII-Benchmark/main/data/pii_benchmark_sample1000.json"
+    f"REDACT-PII-Benchmark/{_PINNED_COMMIT}/data/pii_benchmark_sample1000.json"
 )
+_EXPECTED_SHA256 = "754f562ce9c3c5b7b663f1ba6127c38a31d93f5631d38364341cb727936234c6"
 _DATA_DIR = Path(__file__).resolve().parent / "data"
 _SAMPLE_PATH = _DATA_DIR / "pii_benchmark_sample1000.json"
 
 
 def _download_sample() -> Path:
     if _SAMPLE_PATH.exists():
-        return _SAMPLE_PATH
+        digest = hashlib.sha256(_SAMPLE_PATH.read_bytes()).hexdigest()
+        if digest == _EXPECTED_SHA256:
+            return _SAMPLE_PATH
+        print(f"Checksum mismatch (got {digest[:12]}…), re-downloading.")
+        _SAMPLE_PATH.unlink()
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     print(f"Downloading REDACT sample to {_SAMPLE_PATH} ...")
     urllib.request.urlretrieve(_SAMPLE_URL, _SAMPLE_PATH)
+    digest = hashlib.sha256(_SAMPLE_PATH.read_bytes()).hexdigest()
+    if digest != _EXPECTED_SHA256:
+        _SAMPLE_PATH.unlink()
+        raise RuntimeError(
+            f"REDACT sample checksum mismatch: expected {_EXPECTED_SHA256[:12]}…, "
+            f"got {digest[:12]}…. The upstream file may have changed."
+        )
     print("Done.")
     return _SAMPLE_PATH
 
@@ -105,7 +119,16 @@ def _run_veil(records: list[dict]) -> list[tuple[list[Span], list[Span]]]:
             try:
                 all_findings.extend(d.detect(text))
             except Exception:
-                pass
+                detector_name = getattr(d, "name", type(d).__name__)
+                record_id = rec.get("record_id", "?")
+                logging.error(
+                    "Detector %s failed on record %s", detector_name, record_id,
+                    exc_info=True,
+                )
+                raise RuntimeError(
+                    f"Detector {detector_name!r} raised on record {record_id}; "
+                    "fix the detector or exclude the record with --data"
+                )
 
         # Only keep predictions whose veil type maps back to a REDACT type,
         # so we don't penalise veil for detecting real patterns (JWT, IBAN, …)
