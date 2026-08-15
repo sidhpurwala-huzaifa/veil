@@ -4,8 +4,6 @@
 replace it with reversible session tokens *before* it leaves your boundary, and
 re-hydrate the model's response — streaming or not — on the way back.
 
-> Working title. Rename the package before publishing; nothing in the code
-> depends on the name.
 
 ```
 your app ──► veil.scrub() ──► [EMAIL_1], [CREDIT_CARD_1] ──► frontier LLM
