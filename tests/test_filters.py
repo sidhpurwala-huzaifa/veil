@@ -82,4 +82,24 @@ class TestDenylist:
         )
         findings = fd.detect("email bob@example.com")
         bob_findings = [f for f in findings if "bob@example.com" in f.text]
-        assert len(bob_findings) >= 1
+        assert len(bob_findings) == 1
+
+    def test_denylist_upgrades_existing_confidence(self):
+        """Denylisted value already found by detector gets confidence boosted to 1.0."""
+        fd = FilteredDetector(
+            _email_detector(),
+            denylist={"low@example.com"},
+        )
+        findings = fd.detect("contact low@example.com please")
+        match = [f for f in findings if "low@example.com" in f.text]
+        assert len(match) == 1
+        assert match[0].confidence == 1.0
+
+    def test_empty_denylist_value_ignored(self):
+        """Empty string in denylist must not cause an infinite loop."""
+        fd = FilteredDetector(
+            _email_detector(),
+            denylist={"", "real@val.com"},
+        )
+        findings = fd.detect("email real@val.com here")
+        assert any(f.text == "real@val.com" for f in findings)
